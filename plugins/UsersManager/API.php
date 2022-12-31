@@ -27,6 +27,7 @@ use Piwik\Plugins\CoreAdminHome\Emails\UserDeletedEmail;
 use Piwik\Plugins\Login\PasswordVerifier;
 use Piwik\Plugins\UsersManager\Emails\UserInfoChangedEmail;
 use Piwik\Plugins\UsersManager\Repository\UserRepository;
+use Piwik\Plugins\Login\Validators\AllowedEmailDomain;
 use Piwik\Plugins\UsersManager\Validators\Email;
 use Piwik\SettingsPiwik;
 use Piwik\Site;
@@ -926,7 +927,7 @@ class API extends \Piwik\Plugin\API
         $hasEmailChanged = mb_strtolower($email) !== mb_strtolower($userInfo['email']);
 
         if ($hasEmailChanged) {
-            BaseValidator::check('email', $email, [new Email(true, $userLogin)]);
+            BaseValidator::check('email', $email, [new Email(true, $userLogin), new AllowedEmailDomain()]);
             $changeShouldRequirePasswordConfirmation = true;
         }
 

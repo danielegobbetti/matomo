@@ -9,7 +9,9 @@
 namespace Piwik\Plugins\Login;
 
 use Matomo\Network\IP;
+use Piwik\API\Request;
 use Piwik\Piwik;
+use Piwik\Plugins\Login\Validators\AllowedEmailDomain;
 use Piwik\Settings\Setting;
 use Piwik\Settings\FieldConfig;
 use Piwik\Validators\IpRanges;
@@ -34,13 +36,65 @@ class SystemSettings extends \Piwik\Settings\Plugin\SystemSettings
     /** @var Setting */
     public $loginAttemptsTimeRange;
 
+    /** @var Setting */
+    public $allowedEmailDomains;
+
     protected function init()
     {
+        $this->allowedEmailDomains = $this->createAllowedEmailDomains();
         $this->enableBruteForceDetection = $this->createEnableBruteForceDetection();
         $this->maxFailedLoginsPerMinutes = $this->createMaxFailedLoginsPerMinutes();
         $this->loginAttemptsTimeRange = $this->createLoginAttemptsTimeRange();
         $this->blacklistedBruteForceIps = $this->createBlacklistedBruteForceIps();
         $this->whitelisteBruteForceIps = $this->createWhitelisteBruteForceIps();
+    }
+
+    private function createAllowedEmailDomains()
+    {
+        return $this->makeSetting('allowedEmailDomains', array(), FieldConfig::TYPE_ARRAY, function (FieldConfig $field) {
+            $field->title = 'Restrict login email domains';
+            $field->uiControl = FieldConfig::UI_CONTROL_FIELD_ARRAY;
+            $arrayField = new FieldConfig\ArrayField('Allowed email domain', FieldConfig::UI_CONTROL_TEXT);
+            $field->uiControlAttributes['field'] = $arrayField->toArray();
+            $field->description = 'When configured, then only the defined email domains can be used when inviting, adding, or updating users. It helps for privacy as it prevents unwanted data sharing with third parties. It can also helps from a security point of view to prevent users from changing their email address to a personal email, and it can act as an additional layer to prevent various security attacks.';
+
+            $allowedEmailDomains = new AllowedEmailDomain();
+            $domainsInUse = $allowedEmailDomains->getEmailDomainsInUse();
+            $field->inlineHelp .= '<strong>Currently, these email domains are in use:</strong><br>' . implode('<br>', $domainsInUse);
+
+            $field->validate = function ($value) use ($field, $allowedEmailDomains) {
+                if (empty($value)) {
+                    return;
+                }
+                $value = call_user_func($field->transform, $value, $this);
+                $domainsInUse = $allowedEmailDomains->getEmailDomainsInUse();
+
+                $notMatchingDomains = array_diff($domainsInUse, $value);
+                if (!empty($notMatchingDomains)) {
+                    $notMatchingDomains = implode(',', array_unique($notMatchingDomains));
+                    $message = sprintf('Setting the domains is not possible as other domains (%s) are already in use by other users. To change this setting, you either need to delete users with other domains or you need to allow these domains as well.', $notMatchingDomains);
+                    throw new \Exception($message);
+                }
+            };
+            $field->transform = function ($domains) {
+                if (empty($domains)) {
+                    return array();
+                }
+
+                if (!is_array($domains)){
+                    $domains = [$domains];
+                }
+
+                $domains = array_map(function ($domain) {
+                    $domain = trim($domain);
+                    return mb_strtolower(trim(ltrim($domain, '@')));
+                }, $domains);
+                $domains = array_filter($domains, 'strlen');
+                $domains = array_unique($domains);
+                $domains = array_values($domains);
+                return $domains;
+            };
+        });
     }
 
     private function createEnableBruteForceDetection()
